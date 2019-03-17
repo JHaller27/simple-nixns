@@ -1,0 +1,128 @@
+#!/bin/bash
+
+VETH="veth"
+BVETH="b$VETH"
+IPADDR="10.0.0."
+IPMASK="/24"
+
+BR_NAME="ns0"
+BR_INTR="br0"
+
+# Modes
+M_DEFAULT="default"
+M_CLEAN="clean"
+M_BRIDGE="bridge"
+
+###########################################################
+
+# Parse args
+if [[ "$1" == "-c" ]] || [[ "$1" == "--clean" ]]; then
+    MODE=$M_CLEAN
+elif [[ "$1" == "-b" ]] || [[ "$1" == "--bridge" ]]; then
+    MODE=$M_BRIDGE
+    NS_COUNT=$2
+elif [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    echo "Usage: initns [-c] [-b N]"
+    echo "    -c|--clean       Remove all existing namespaces"
+    echo "    -b|--bridge N    Bridge mode: Create N namespaces connected to a bridge ($BR_NAME)"
+    exit
+else
+    MODE=$M_DEFAULT
+fi
+
+###########################################################
+
+# Remove all pre-existing namespaces
+
+if [[ $MODE == $M_CLEAN ]]; then
+    echo "Cleaning existing namespaces..."
+    ip netns list
+    ip -all netns del
+fi
+
+#----------------------------------------------------------
+
+# Create namespaces (DEFAULT)
+
+if [[ $MODE == $M_DEFAULT ]]; then
+    echo "Creating ${VETH}1/${VETH}2"
+    ip link add "${VETH}1" type veth peer name "${VETH}2"
+
+    for i in {1..2}; do
+        MY_NAME="ns$i"
+        MY_VETH="$VETH$i"
+        MY_ADDR="$IPADDR$i$IPMASK"
+
+        echo "Creating $MY_NAME..."
+
+        if [[ -e /var/run/netns/$MY_NAME ]]; then
+            echo "    Removing pre-existing $MY_NAME"
+            ip netns del $MY_NAME
+        fi
+
+        echo "    Adding namespace"
+        ip netns add $MY_NAME
+
+        echo "    Configuring network on $MY_ADDR"
+        ip link set $MY_VETH netns $MY_NAME
+        ip netns exec $MY_NAME ifconfig $MY_VETH $MY_ADDR
+        ip netns exec $MY_NAME ifconfig lo up
+
+        echo "    Opening xterm"
+        ip netns exec $MY_NAME xterm -T $MY_NAME &
+    done
+fi
+
+#----------------------------------------------------------
+
+# Create namespaces (BRIDGE)
+
+if [[ $MODE == $M_BRIDGE ]]; then
+    # Create bridge (ns0)
+    echo "Creaing bridge $BR_NAME..."
+    if [[ -e /var/run/netns/$MY_NAME ]]; then
+        echo "    Removing pre-existing $MY_NAME"
+        ip netns del $MY_NAME
+    fi
+
+    echo "    Adding namespace"
+    ip netns add $BR_NAME
+
+    echo "    Configuring network interface"
+    ip netns exec $BR_NAME ifconfig lo up
+    ip netns exec $BR_NAME ip link add $BR_INTR type bridge
+    ip netns exec $BR_NAME ifconfig $BR_INTR up
+    
+    echo "    Opening xterm"
+    ip netns exec $BR_NAME xterm -T "$BR_NAME (bridge)" &
+
+    # Create rest of namespaces
+    for ((i=1;i<=$NS_COUNT;i++)); do
+        MY_NAME="ns$i"
+        MY_VETH="${VETH}0"
+        MY_BVETH="$BVETH$i"
+        MY_ADDR="$IPADDR$i$IPMASK"
+
+        echo "Creating $MY_NAME..."
+
+        if [[ -e /var/run/netns/$MY_NAME ]]; then
+            echo "    Removing pre-existing $MY_NAME"
+            ip netns del $MY_NAME
+        fi
+
+        echo "    Adding namespace"
+        ip netns add $MY_NAME
+
+        echo "    Configuring network on $MY_ADDR"
+        ip netns exec $MY_NAME ip link add $MY_VETH type veth peer name $MY_BVETH
+        ip netns exec $MY_NAME ifconfig $MY_VETH $MY_ADDR
+        ip netns exec $MY_NAME ip link set $MY_BVETH netns $BR_NAME
+        ip netns exec $BR_NAME ip link set $MY_BVETH master $BR_INTR
+        ip netns exec $BR_NAME ifconfig $MY_BVETH up
+
+        echo "    Opening xterm"
+        ip netns exec $MY_NAME xterm -T $MY_NAME &
+    done
+
+fi
+

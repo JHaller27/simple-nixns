@@ -5,6 +5,10 @@ BVETH="b$VETH"
 IPADDR="10.0.0."
 IPMASK="/24"
 
+LINK_HOST=254
+LINK_IP="$IPADDR$LINK_HOST"
+LINK_FULL_IP="$LINK_IP$IPMASK"
+
 BR_NAME="ns0"
 BR_INTR="br0"
 
@@ -12,6 +16,7 @@ BR_INTR="br0"
 M_DEFAULT="default"
 M_CLEAN="clean"
 M_BRIDGE="bridge"
+M_LINK="link"  # Link default namespace
 
 ###########################################################
 
@@ -21,10 +26,13 @@ if [[ "$1" == "-c" ]] || [[ "$1" == "--clean" ]]; then
 elif [[ "$1" == "-b" ]] || [[ "$1" == "--bridge" ]]; then
     MODE=$M_BRIDGE
     NS_COUNT=$2
+elif [[ "$1" == "-l" ]] || [[ "$1" == "--link" ]]; then
+    MODE=$M_LINK
 elif [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
     echo "Usage: initns [-c] [-b N]"
     echo "    -c|--clean       Remove all existing namespaces"
     echo "    -b|--bridge N    Bridge mode: Create N namespaces connected to a bridge ($BR_NAME)"
+    echo "    -l|--link        Link: Link current namespace to existing bridge on $LINK_IP"
     exit
 else
     MODE=$M_DEFAULT
@@ -124,5 +132,26 @@ if [[ $MODE == $M_BRIDGE ]]; then
         ip netns exec $MY_NAME xterm -T $MY_NAME &
     done
 
+fi
+
+#----------------------------------------------------------
+
+# Link current namespace
+
+if [[ $MODE == $M_LINK ]]; then
+    MY_VETH="${VETH}0"
+    MY_BVETH="$BVETH$LINK_HOST"
+
+    echo "Creating link..."
+    ip link add $MY_VETH type veth peer name $MY_BVETH
+    ip link set $MY_BVETH netns $BR_NAME
+
+    echo "    Configuring this side"
+    ifconfig $MY_VETH $LINK_FULL_IP
+    ifconfig $MY_VETH up
+
+    echo "    Configuring bridge side"
+    ip netns exec $BR_NAME ip link set $MY_BVETH master $BR_INTR
+    ip netns exec $BR_NAME ifconfig $MY_BVETH up
 fi
 

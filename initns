@@ -77,7 +77,7 @@ if [[ $MODE == $M_DEFAULT ]]; then
         ip netns exec $MY_NAME ifconfig lo up
 
         echo "    Opening xterm in $MY_NAME"
-        ip netns exec $MY_NAME xterm -T "$MY_NAME" &
+        ip netns exec $MY_NAME xterm -xrm "xterm*allowTitleOps: false" -T "$MY_NAME" &
     done
 fi
 
@@ -102,7 +102,7 @@ if [[ $MODE == $M_BRIDGE ]]; then
     ip netns exec $BR_NAME ifconfig $BR_INTR up
     
     echo "    Opening xterm in $BR_NAME"
-    ip netns exec $BR_NAME xterm -T "$BR_NAME" &
+    ip netns exec $BR_NAME xterm -xrm "xterm*allowTitleOps: false" -T "$BR_NAME" &
 
     # Create rest of namespaces
     for ((i=1;i<=$NS_COUNT;i++)); do
@@ -129,7 +129,7 @@ if [[ $MODE == $M_BRIDGE ]]; then
         ip netns exec $BR_NAME ifconfig $MY_BVETH up
 
         echo "    Opening xterm in $MY_NAME"
-        ip netns exec $MY_NAME xterm -T "$MY_NAME" &
+        ip netns exec $MY_NAME xterm -xrm "xterm*allowTitleOps: false" -T "$MY_NAME" &
     done
 
 fi
